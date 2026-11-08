@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CubeTrack</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><a class="brand" href="./">CUBE<span>TRACK</span></a><span class="muted">PERSONAL CUBING DASHBOARD</span></header>
+<main>
+  <section class="welcome">
+    <div><p class="eyebrow">YOUR TRAINING HQ</p><h1>CubeTrack</h1><p class="muted">One hour a day. One solve at a time.</p></div>
+    <div class="status" id="connectionStatus">Bridge not connected</div>
+  </section>
+
+  <section class="stats">
+    <article class="card"><small>Best single</small><strong id="bestSingle">--</strong></article>
+    <article class="card"><small>Best Ao5</small><strong id="bestAo5">--</strong></article>
+    <article class="card"><small>Imported solves</small><strong id="solveCount">0</strong></article>
+    <article class="card"><small>Practice today</small><strong id="practiceToday">0 / 60 min</strong></article>
+  </section>
+
+  <section class="card">
+    <div class="section-head"><div><p class="eyebrow">CS TIMER CONNECTION</p><h2>Sync your solves</h2></div><button id="syncButton">Sync from csTimer</button></div>
+    <p class="muted">Open csTimer in this Chrome profile first. The bridge reads saved sessions and transfers them directly to this page.</p>
+    <label for="extensionId">Chrome extension ID</label>
+    <div class="inline"><input id="extensionId" placeholder="Paste the ID from chrome://extensions"><button class="secondary" id="saveId">Save ID</button></div>
+    <p class="hint" id="syncMessage">No sync has been run yet.</p>
+    <div class="row wrap">
+      <label class="check"><input type="checkbox" id="only333" checked> Show 3×3 solves only</label>
+      <button class="secondary" id="exportButton">Export backup</button>
+      <label class="secondary file-button">Import backup<input type="file" id="importFile" accept="application/json"></label>
+    </div>
+  </section>
+
+  <section class="grid-two">
+    <section class="card timer-card">
+      <p class="eyebrow">DAILY PRACTICE</p><h2>60-minute goal</h2>
+      <div class="clock" id="clock">60:00</div>
+      <div class="bar"><span id="timerProgress"></span></div>
+      <div class="row center">
+        <button id="startTimer">Start</button><button class="secondary" id="pauseTimer">Pause</button><button class="secondary" id="resetTimer">Reset</button>
+      </div>
+      <p class="hint" id="timerMessage">Ready when you are.</p>
+    </section>
+    <section class="card">
+      <p class="eyebrow">SPEED TARGETS</p><h2>Milestones</h2>
+      <div id="milestones"></div>
+    </section>
+  </section>
+
+  <section class="card">
+    <div class="section-head"><div><p class="eyebrow">RECENT PERFORMANCE</p><h2>Recent solves</h2></div><span class="muted" id="sessionLabel">All sessions</span></div>
+    <div class="table-wrap"><table><thead><tr><th>Time</th><th>Penalty</th><th>Session</th><th>Date</th></tr></thead><tbody id="solveRows"><tr><td colspan="4">Sync csTimer to import solves.</td></tr></tbody></table></div>
+  </section>
+  <footer>CubeTrack · Your data stays in this browser.</footer>
+</main>
+<script src="app.js"></script>
+</body></html>
