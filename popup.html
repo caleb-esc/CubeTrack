@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CubeTrack Bridge</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header><span class="mark">C</span><div><strong>CubeTrack</strong><small>csTimer bridge</small></div><span class="live">● READY</span></header>
+  <main>
+    <section class="intro"><span class="eyebrow">YOUR SOLVES, TOGETHER</span><h1>Sync your session</h1><p>Bring your csTimer solves into your CubeTrack dashboard.</p></section>
+    <label for="site">CubeTrack website</label>
+    <div class="url-row"><input id="site" type="url" spellcheck="false"><button id="save" class="quiet" title="Save website">Save</button></div>
+    <button id="sync" class="primary"><span>↗</span> Sync from csTimer</button>
+    <p id="status" role="status" aria-live="polite">Open csTimer in another tab to get started.</p>
+    <div class="foot"><span>Duplicates are skipped</span><span>Runs on this device</span></div>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
