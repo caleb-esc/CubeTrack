@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "CubeTrack csTimer Bridge",
+  "version": "1.0.0",
+  "description": "Automatically sync solves from csTimer into CubeTrack.",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": [
+    "https://cstimer.net/*",
+    "https://www.cstimer.net/*",
+    "https://caleb-esc.github.io/CubeTrack/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://cstimer.net/*",
+        "https://www.cstimer.net/*"
+      ],
+      "js": ["content-cstimer.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://caleb-esc.github.io/CubeTrack/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["content-cubetrack.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "CubeTrack Bridge",
+    "default_popup": "index.html"
+  }
+}

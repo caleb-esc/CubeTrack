@@ -1,0 +1,146 @@
+const SOLVE_KEYS = [
+  "time",
+  "seconds",
+  "solve",
+  "result",
+  "value",
+  "timestamp",
+  "scramble",
+  "penalty",
+  "penaltyType",
+  "puzzle",
+  "cube",
+  "event"
+];
+
+function toNumber(value) {
+  const v = Number(value);
+  return Number.isFinite(v) ? v : null;
+}
+
+function normalizePenalty(rawPenalty) {
+  const value = String(rawPenalty || "").trim();
+  if (!value || value === "OK" || value === "ok") return "";
+  if (value.toLowerCase() === "dnf") return "DNF";
+  return value;
+}
+
+function buildSolveCandidate(raw) {
+  if (!raw || typeof raw !== "object") return null;
+
+  const time = toNumber(raw.time ?? raw.seconds ?? raw.solve ?? raw.result ?? raw.value ?? raw.elapsed);
+  if (time === null) return null;
+
+  const penalty = normalizePenalty(raw.penalty ?? raw.penaltyType ?? raw.penalty_type);
+  const puzzle = raw.puzzle || raw.cube || raw.event || "333";
+  const timestamp = Number(raw.timestamp || Date.now());
+
+  return {
+    id: raw.id || `cstimer-${timestamp}-${Math.random().toString(16).slice(2)}`,
+    seconds: time,
+    puzzle: String(puzzle),
+    penalty,
+    dnf: Boolean(raw.dnf) || penalty.toUpperCase() === "DNF",
+    timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
+    scramble: raw.scramble || "",
+    date: raw.date || new Date(timestamp).toISOString(),
+  };
+}
+
+function getObjectFromStorage(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function collectCandidates(node, out) {
+  if (!node || typeof node !== "object") return;
+
+  if (Array.isArray(node)) {
+    for (const item of node) collectCandidates(item, out);
+    return;
+  }
+
+  if (node.hasOwnProperty("solves") && Array.isArray(node.solves)) {
+    for (const solve of node.solves) collectCandidates(solve, out);
+  }
+
+  if (node.hasOwnProperty("sessions") && Array.isArray(node.sessions)) {
+    for (const session of node.sessions) collectCandidates(session, out);
+  }
+
+  const lookLikeSolve = Object.keys(node).some((key) => SOLVE_KEYS.includes(key));
+  if (lookLikeSolve) {
+    const candidate = buildSolveCandidate(node);
+    if (candidate) out.push(candidate);
+  }
+
+  for (const value of Object.values(node)) {
+    if (value && typeof value === "object") collectCandidates(value, out);
+  }
+}
+
+function extractCsTimerSolves() {
+  const candidates = [];
+
+  const directRoots = [
+    window.cstimer,
+    window.cstimer?.state,
+    window.cstimer?.session,
+    window.cstimer?.sessionData,
+    window.sessionData,
+    window.session,
+    window.state,
+  ];
+
+  for (const root of directRoots) {
+    collectCandidates(root, candidates);
+  }
+
+  for (const key of Object.keys(localStorage)) {
+    const value = getObjectFromStorage(key);
+    if (value) collectCandidates(value, candidates);
+  }
+
+  const deduped = [];
+  const seen = new Set();
+
+  for (const solve of candidates) {
+    const signature = `${solve.id}|${solve.puzzle}|${solve.seconds}|${solve.timestamp}`;
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    deduped.push(solve);
+  }
+
+  return deduped;
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "READ_CSTIMER_SOLVES") {
+    try {
+      const solves = extractCsTimerSolves();
+      if (!solves.length) {
+        sendResponse({ ok: false, error: "No csTimer solves were found on this page." });
+        return true;
+      }
+
+      sendResponse({ ok: true, solves });
+    } catch (error) {
+      sendResponse({ ok: false, error: error.message || "Unable to read solves from csTimer." });
+    }
+
+    return true;
+  }
+
+  if (message?.type === "PING") {
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  return false;
+});

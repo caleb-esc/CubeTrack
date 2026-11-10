@@ -1,0 +1,112 @@
+const DEFAULT_CUBETRACK_URL = "https://caleb-esc.github.io/CubeTrack/";
+const CSTIMER_URLS = ["https://cstimer.net/*", "https://www.cstimer.net/*"];
+
+async function getCubeTrackUrl() {
+  const { cubetrackUrl } = await chrome.storage.local.get("cubetrackUrl");
+  return (cubetrackUrl || DEFAULT_CUBETRACK_URL).trim();
+}
+
+async function findTabByPatterns(patterns) {
+  const tabs = await chrome.tabs.query({ url: patterns });
+  return tabs[0] || null;
+}
+
+async function findCsTimerTab() {
+  const tabs = await chrome.tabs.query({ url: CSTIMER_URLS });
+  if (tabs.length) return tabs[0];
+
+  const active = await chrome.tabs.query({ active: true, currentWindow: true });
+  const activeUrl = active[0]?.url || "";
+  if (/cstimer\.net/i.test(activeUrl)) return active[0];
+
+  return null;
+}
+
+async function relayToCubeTrack(solves) {
+  const url = await getCubeTrackUrl();
+  let tab = await findTabByPatterns([`${url}*`]);
+
+  if (!tab) {
+    tab = await chrome.tabs.create({ url, active: true });
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    tab = await findTabByPatterns([`${url}*`]);
+  }
+
+  if (!tab || !tab.id) {
+    throw new Error("CubeTrack tab could not be opened. Check the URL in the extension popup.");
+  }
+
+  const response = await chrome.tabs.sendMessage(tab.id, {
+    type: "IMPORT_SOLVES",
+    solves,
+  });
+
+  if (!response?.ok) {
+    throw new Error(response?.error || "CubeTrack did not accept the imported solves.");
+  }
+
+  return response;
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "SYNC_FROM_CSTIMER") {
+    (async () => {
+      try {
+        const csTimerTab = await findCsTimerTab();
+        if (!csTimerTab || !csTimerTab.id) {
+          sendResponse({ ok: false, error: "Open csTimer in this browser first." });
+          return;
+        }
+
+        const readResponse = await chrome.tabs.sendMessage(csTimerTab.id, {
+          type: "READ_CSTIMER_SOLVES",
+        });
+
+        if (!readResponse?.ok) {
+          sendResponse({ ok: false, error: readResponse?.error || "csTimer is not exposing solve data." });
+          return;
+        }
+
+        const solves = Array.isArray(readResponse.solves) ? readResponse.solves : [];
+        if (!solves.length) {
+          sendResponse({ ok: false, error: "No solves were found in csTimer." });
+          return;
+        }
+
+        const importResponse = await relayToCubeTrack(solves);
+        sendResponse({ ok: true, added: importResponse.added || solves.length, total: importResponse.total || solves.length });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message || "Sync failed." });
+      }
+    })();
+
+    return true;
+  }
+
+  if (message?.type === "GET_SETTINGS") {
+    (async () => {
+      try {
+        const url = await getCubeTrackUrl();
+        sendResponse({ ok: true, cubetrackUrl: url });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message || "Unable to read settings." });
+      }
+    })();
+    return true;
+  }
+
+  if (message?.type === "SAVE_SETTINGS") {
+    (async () => {
+      try {
+        const url = (message.cubetrackUrl || DEFAULT_CUBETRACK_URL).trim();
+        await chrome.storage.local.set({ cubetrackUrl: url });
+        sendResponse({ ok: true, cubetrackUrl: url });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message || "Unable to save settings." });
+      }
+    })();
+    return true;
+  }
+
+  return false;
+});

@@ -1,0 +1,78 @@
+const STORE_KEY = "cubetrack_data_v1";
+
+function readState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return { solves: [], practice: {} };
+    const parsed = JSON.parse(raw);
+    return { solves: Array.isArray(parsed.solves) ? parsed.solves : [], practice: parsed.practice || {} };
+  } catch {
+    return { solves: [], practice: {} };
+  }
+}
+
+function writeState(nextState) {
+  localStorage.setItem(STORE_KEY, JSON.stringify(nextState));
+}
+
+function normalizeImportedSolve(solve) {
+  if (!solve || typeof solve !== "object") return null;
+
+  let seconds = Number(solve.seconds ?? solve.time ?? solve.result ?? solve.value ?? solve.elapsed);
+  if (!Number.isFinite(seconds)) return null;
+
+  const penalty = String(solve.penalty || "").trim();
+  const dnf = Boolean(solve.dnf) || penalty.toUpperCase() === "DNF";
+  const id = solve.id || `${solve.puzzle || "333"}-${solve.timestamp || Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  return {
+    id,
+    puzzle: String(solve.puzzle || solve.cube || solve.event || "333"),
+    seconds,
+    dnf,
+    penalty: penalty || "",
+    timestamp: Number(solve.timestamp || Date.now()),
+    scramble: solve.scramble || "",
+    date: solve.date || new Date().toISOString(),
+  };
+}
+
+function importSolves(inputSolves) {
+  const state = readState();
+  const merged = Array.isArray(state.solves) ? state.solves : [];
+  const seen = new Set(merged.map((solve) => solve.id || `${solve.puzzle}-${solve.timestamp}`));
+  let added = 0;
+
+  for (const entry of Array.isArray(inputSolves) ? inputSolves : []) {
+    const normalized = normalizeImportedSolve(entry);
+    if (!normalized) continue;
+    if (!seen.has(normalized.id)) {
+      merged.push(normalized);
+      seen.add(normalized.id);
+      added += 1;
+    }
+  }
+
+  writeState({ ...state, solves: merged });
+  return { ok: true, added, total: merged.length };
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "IMPORT_SOLVES") {
+    try {
+      const result = importSolves(message.solves);
+      window.dispatchEvent(new CustomEvent("cubetrack:solvesImported", { detail: { added: result.added, total: result.total } }));
+      sendResponse(result);
+    } catch (error) {
+      sendResponse({ ok: false, error: error.message || "Unable to import solves." });
+    }
+    return true;
+  }
+
+  if (message?.type === "PING") {
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  return false;
+});

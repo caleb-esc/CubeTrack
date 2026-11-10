@@ -1,0 +1,252 @@
+const DEFAULT_CUBETRACK_URL = "https://caleb-esc.github.io/CubeTrack/";
+const STORE_KEY = "cubetrack_data_v1";
+const ID_KEY = "cubetrack_extension_id";
+const URL_KEY = "cubetrack_bridge_url";
+
+const $ = (id) => document.getElementById(id);
+
+let state = JSON.parse(localStorage.getItem(STORE_KEY) || '{"solves":[],"practice":{}}');
+state.solves ||= [];
+state.practice ||= {};
+
+let remaining = 3600;
+let elapsedSinceMinute = 0;
+let tick = null;
+
+function message(text) {
+  const el = $("syncMessage");
+  if (el) el.textContent = text;
+}
+
+function saveState() {
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  render();
+}
+
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function sec(ms) {
+  return (ms / 1000).toFixed(2) + "s";
+}
+
+function filtered() {
+  return state.solves.filter((solve) => !$("only333").checked || String(solve.puzzle || "333") === "333");
+}
+
+function bestRollingAverage(list, n) {
+  const ordered = list.slice().sort((a, b) => a.timestamp - b.timestamp);
+  let best = null;
+
+  for (let i = 0; i + n <= ordered.length; i++) {
+    const window = ordered.slice(i, i + n);
+    const dnfs = window.filter((entry) => entry.dnf || !Number.isFinite(entry.seconds)).length;
+    if (dnfs > 1) continue;
+
+    const values = window
+      .map((entry) => (entry.dnf || !Number.isFinite(entry.seconds)) ? Infinity : entry.seconds)
+      .sort((a, b) => a - b);
+
+    values.shift();
+    values.pop();
+
+    const avg = values.some((value) => !Number.isFinite(value))
+      ? null
+      : values.reduce((sum, value) => sum + value, 0) / values.length;
+
+    if (avg !== null && (best === null || avg < best)) best = avg;
+  }
+
+  return best;
+}
+
+function render() {
+  const solves = filtered();
+  const valid = solves.filter((solve) => !solve.dnf);
+
+  const findBest = (key) => {
+    if (!valid.length) return null;
+    const values = valid.map((solve) => solve[key]).filter(Number.isFinite);
+    return values.length ? Math.min(...values) : null;
+  };
+
+  const bestSingle = findBest("seconds");
+  const bestAo5 = bestRollingAverage(solves, 5);
+
+  $("bestSingle").textContent = bestSingle === null ? "--" : sec(bestSingle * 1000);
+  $("bestAo5").textContent = bestAo5 === null ? "--" : sec(bestAo5 * 1000);
+  $("solveCount").textContent = solves.length;
+
+  const minutesToday = state.practice[today()] || 0;
+  $("practiceToday").textContent = `${minutesToday} / 60 min`;
+
+  const targets = [20, 15, 12, 10];
+  const best = findBest("seconds");
+  $("milestones").innerHTML = targets
+    .map((target) => {
+      let pct = 0;
+      if (best !== null) {
+        pct = Math.max(0, Math.min(100, (30 - best) / (30 - target) * 100));
+      }
+
+      return `
+        <div class="milestone">
+          <div class="milestone-head"><b>Sub-${target}</b><span>${best === null ? "--" : sec(best * 1000)}</span></div>
+          <div class="bar"><span style="width:${Math.max(0, pct)}%"></span></div>
+        </div>
+      `;
+    })
+    .join("");
+
+  $("solveRows").innerHTML = solves
+    .slice()
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+    .slice(0, 30)
+    .map((solve) => `<tr><td>${solve.dnf ? "DNF" : sec(solve.seconds * 1000)}</td><td class="${solve.penalty ? "penalty" : ""}">${solve.penalty || ""}</td><td>${solve.puzzle || "333"}</td><td>${new Date(solve.timestamp || Date.now()).toLocaleDateString()}</td></tr>`)
+    .join("") || `<tr><td colspan="4">Sync csTimer to import solves.</td></tr>`;
+}
+
+function showClock() {
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  $("clock").textContent = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  $("timerProgress").style.width = `${((3600 - remaining) / 3600) * 100}%`;
+}
+
+function addPracticeMinute() {
+  const key = today();
+  state.practice[key] = (state.practice[key] || 0) + 1;
+  saveState();
+}
+
+function setupTimer() {
+  $("startTimer").onclick = () => {
+    if (tick || remaining <= 0) return;
+    $("timerMessage").textContent = "Practice session running.";
+    tick = setInterval(() => {
+      remaining -= 1;
+      elapsedSinceMinute += 1;
+      if (elapsedSinceMinute >= 60) {
+        addPracticeMinute();
+        elapsedSinceMinute = 0;
+      }
+      if (remaining <= 0) {
+        clearInterval(tick);
+        tick = null;
+        remaining = 0;
+        $("timerMessage").textContent = "Session complete — great work.";
+      }
+      showClock();
+    }, 1000);
+  };
+
+  $("pauseTimer").onclick = () => {
+    if (tick) {
+      clearInterval(tick);
+      tick = null;
+      $("timerMessage").textContent = "Paused.";
+    }
+  };
+
+  $("resetTimer").onclick = () => {
+    if (tick) {
+      clearInterval(tick);
+      tick = null;
+    }
+    remaining = 3600;
+    elapsedSinceMinute = 0;
+    showClock();
+    $("timerMessage").textContent = "Ready when you are.";
+  };
+}
+
+function saveExtensionId() {
+  const nextId = $("extensionId").value.trim();
+  localStorage.setItem(ID_KEY, nextId);
+  message("Extension ID saved in this browser.");
+}
+
+function saveCubeTrackUrl() {
+  const nextValue = $("cubeTrackUrl").value.trim() || DEFAULT_CUBETRACK_URL;
+  localStorage.setItem(URL_KEY, nextValue);
+  if (chrome?.storage?.local) {
+    chrome.storage.local.set({ cubetrackUrl: nextValue });
+  }
+  message("CubeTrack URL saved.");
+}
+
+async function syncFromCsTimer() {
+  const url = $("cubeTrackUrl").value.trim() || DEFAULT_CUBETRACK_URL;
+  localStorage.setItem(URL_KEY, url);
+
+  if (chrome?.storage?.local) {
+    chrome.storage.local.set({ cubetrackUrl: url });
+  }
+
+  message("Checking csTimer and CubeTrack…");
+
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "SYNC_FROM_CSTIMER" });
+    if (!response?.ok) {
+      throw new Error(response?.error || "The bridge returned an error.");
+    }
+
+    message(`Sync complete: ${response.added} new solves added.`);
+    render();
+  } catch (error) {
+    message(error.message || "Sync failed. Open csTimer in the browser first.");
+  }
+}
+
+function prepareUi() {
+  $("extensionId").value = localStorage.getItem(ID_KEY) || "";
+  $("cubeTrackUrl").value = localStorage.getItem(URL_KEY) || DEFAULT_CUBETRACK_URL;
+  $("saveId").onclick = saveExtensionId;
+  $("saveUrl").onclick = saveCubeTrackUrl;
+  $("syncButton").onclick = syncFromCsTimer;
+  $("only333").addEventListener("change", render);
+  $("exportButton").onclick = () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const anchor = document.createElement("a");
+    anchor.href = URL.createObjectURL(blob);
+    anchor.download = "cubetrack-backup.json";
+    anchor.click();
+  };
+  $("importFile").onchange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!parsed || !Array.isArray(parsed.solves)) throw new Error("Invalid CubeTrack backup");
+      state = parsed;
+      state.solves ||= [];
+      state.practice ||= {};
+      saveState();
+      message("Backup imported successfully.");
+    } catch (error) {
+      message(error.message || "Could not import that backup.");
+    }
+  };
+
+  if (typeof chrome !== "undefined" && chrome?.runtime) {
+    $("connectionStatus").textContent = "Bridge ready";
+    $("connectionStatus").classList.add("ready");
+  }
+}
+
+$(function () {
+  prepareUi();
+  setupTimer();
+  showClock();
+  render();
+});
+
+window.addEventListener("cubetrack:solvesImported", () => {
+  const stateFromStorage = JSON.parse(localStorage.getItem(STORE_KEY) || '{"solves":[],"practice":{}}');
+  state = stateFromStorage;
+  state.solves ||= [];
+  state.practice ||= {};
+  render();
+});
